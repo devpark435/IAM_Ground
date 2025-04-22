@@ -1,0 +1,14 @@
+ 
+ 
+ 
+ 
+ 
+
+ 
+PRODUCT_NAME = iam_ground
+
+ 
+PRODUCT_BUNDLE_IDENTIFIER = com.example.iamGround
+
+ 
+PRODUCT_COPYRIGHT = Copyright © 2025 com.example. All rights reserved.
