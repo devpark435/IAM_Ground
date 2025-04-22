@@ -352,7 +352,7 @@ class _Card3DItemState extends ConsumerState<Card3DItem>
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: () {
-                      context.go('/card/${widget.card.id}');
+                      context.go('/my-cards/card/${widget.card.id}');
                     },
                     icon: const Icon(Icons.visibility_rounded, size: 18),
                     label: const Text(AppStrings.viewButton),
