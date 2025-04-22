@@ -38,14 +38,16 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/my-cards',
         name: 'my-cards',
         builder: (context, state) => const CardListScreen(),
-      ),
-      GoRoute(
-        path: '/card/:id',
-        name: 'web-viewer',
-        builder: (context, state) {
-          final cardId = state.pathParameters['id'];
-          return WebViewerScreen(cardId: cardId!);
-        },
+        routes: [
+          GoRoute(
+            path: 'card/:id',
+            name: 'web-viewer',
+            builder: (context, state) {
+              final cardId = state.pathParameters['id'];
+              return WebViewerScreen(cardId: cardId!);
+            },
+          ),
+        ],
       ),
     ],
     errorBuilder:
