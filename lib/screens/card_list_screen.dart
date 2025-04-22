@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'dart:math' as math;
 import '../models/profile_card.dart';
 import '../providers/card_provider.dart';
 import '../utils/constants.dart';
@@ -99,34 +100,106 @@ class CardListScreen extends ConsumerWidget {
         final card = cards[index];
         return Padding(
           padding: const EdgeInsets.only(bottom: 20),
-          child: CardItem(card: card),
+          child: Card3DItem(card: card),
         );
       },
     );
   }
 }
 
-class CardItem extends ConsumerWidget {
+class Card3DItem extends ConsumerStatefulWidget {
   final ProfileCard card;
 
-  const CardItem({super.key, required this.card});
+  const Card3DItem({super.key, required this.card});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<Card3DItem> createState() => _Card3DItemState();
+}
+
+class _Card3DItemState extends ConsumerState<Card3DItem>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _animationController;
+  late Animation<double> _rotationAnimation;
+  double _rotationY = 0.0;
+  double _rotationX = 0.0;
+  bool _isHovered = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _animationController = AnimationController(
+      vsync: this,
+      duration: AppAnimations.medium,
+    );
+
+    _rotationAnimation = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeOutBack),
+    );
+
+    _animationController.forward();
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  void _onPanUpdate(DragUpdateDetails details) {
+    setState(() {
+      // 가로 방향 회전 (세로 드래그로 조작)
+      _rotationX += details.delta.dy / 100;
+      // 세로 방향 회전 (가로 드래그로 조작)
+      _rotationY -= details.delta.dx / 100;
+
+      // 회전 각도 제한
+      _rotationX = _rotationX.clamp(-0.3, 0.3);
+      _rotationY = _rotationY.clamp(-0.3, 0.3);
+    });
+  }
+
+  void _onPanEnd(DragEndDetails details) {
+    // 손을 떼면 카드가 원래 위치로 돌아오는 애니메이션
+    setState(() {
+      _rotationX = 0;
+      _rotationY = 0;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 카드 변환 행렬 계산
+    final Matrix4 cardTransform =
+        Matrix4.identity()
+          ..setEntry(3, 2, 0.001) // 원근감 추가
+          ..rotateX(_rotationX)
+          ..rotateY(_rotationY);
+
+    // 카드 전체를 감싸는 컨테이너
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(AppRadius.medium),
-        boxShadow: AppShadows.small,
+        boxShadow:
+            _isHovered
+                ? [
+                  BoxShadow(
+                    color: AppColors.primary.withOpacity(0.2),
+                    blurRadius: 15,
+                    offset: const Offset(0, 10),
+                  ),
+                ]
+                : AppShadows.small,
       ),
       child: Column(
         children: [
-          // Card info section
+          // 카드 정보 섹션 (이름, 나이, MBTI)
           Padding(
             padding: const EdgeInsets.all(AppPadding.medium),
             child: Row(
               children: [
-                // Mini profile image
+                // 프로필 이미지
                 Container(
                   width: 50,
                   height: 50,
@@ -134,28 +207,28 @@ class CardItem extends ConsumerWidget {
                     shape: BoxShape.circle,
                     color: AppColors.primary.withOpacity(0.1),
                     image:
-                        card.imagePath != null
+                        widget.card.imagePath != null
                             ? DecorationImage(
-                              image: AssetImage(card.imagePath!),
+                              image: AssetImage(widget.card.imagePath!),
                               fit: BoxFit.cover,
                             )
                             : null,
                   ),
                   child:
-                      card.imagePath == null
+                      widget.card.imagePath == null
                           ? const Icon(Icons.person, color: AppColors.primary)
                           : null,
                 ),
 
                 const SizedBox(width: 12),
 
-                // Card info
+                // 카드 정보
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        card.name,
+                        widget.card.name,
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 18,
@@ -165,7 +238,7 @@ class CardItem extends ConsumerWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '${card.age}세, ${card.mbti}',
+                        '${widget.card.age}세, ${widget.card.mbti}',
                         style: TextStyle(
                           color: AppColors.textLight,
                           fontSize: 14,
@@ -175,86 +248,111 @@ class CardItem extends ConsumerWidget {
                   ),
                 ),
 
-                // Created date
+                // 생성 날짜
                 Text(
-                  _formatDate(card.createdAt),
+                  _formatDate(widget.card.createdAt),
                   style: TextStyle(color: AppColors.textLight, fontSize: 12),
                 ),
               ],
             ),
           ),
 
-          // Preview section
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppPadding.medium),
-            child: SizedBox(
-              height: 120,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(AppRadius.small),
-                child: Stack(
-                  children: [
-                    // Mini card preview (scaled down)
-                    Positioned.fill(
-                      child: FittedBox(
-                        fit: BoxFit.cover,
-                        alignment: Alignment.center,
-                        clipBehavior: Clip.hardEdge,
-                        child: SizedBox(
-                          width: 400, // These dimensions preserve aspect ratio
-                          height: 600,
-                          child: CardPreview(card: card, scale: 0.5),
-                        ),
-                      ),
-                    ),
-
-                    // Gradient overlay for better visibility
-                    Positioned.fill(
+          // 3D 미리보기 섹션
+          GestureDetector(
+            onPanUpdate: _onPanUpdate,
+            onPanEnd: _onPanEnd,
+            onTapDown: (_) => setState(() => _isHovered = true),
+            onTapUp: (_) => setState(() => _isHovered = false),
+            onTapCancel: () => setState(() => _isHovered = false),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppPadding.medium,
+              ),
+              child: SizedBox(
+                height: 180, // 높이 증가
+                child: AnimatedBuilder(
+                  animation: _animationController,
+                  builder: (context, child) {
+                    return Transform(
+                      transform: cardTransform,
+                      alignment: Alignment.center,
                       child: Container(
                         decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.black.withOpacity(0),
-                              Colors.black.withOpacity(0.4),
+                          borderRadius: BorderRadius.circular(AppRadius.medium),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.2),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
+                              spreadRadius: 2,
+                            ),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(AppRadius.medium),
+                          child: Stack(
+                            children: [
+                              // 카드 미리보기
+                              Positioned.fill(
+                                child: CardPreview(
+                                  card: widget.card,
+                                  scale: 0.8,
+                                ),
+                              ),
+
+                              // 인터랙티브 오버레이
+                              Positioned.fill(
+                                child: AnimatedOpacity(
+                                  duration: const Duration(milliseconds: 200),
+                                  opacity: _isHovered ? 0.1 : 0.0,
+                                  child: Container(color: Colors.white),
+                                ),
+                              ),
+
+                              // 중앙 보기 아이콘
+                              if (_isHovered)
+                                Center(
+                                  child: Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      shape: BoxShape.circle,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withOpacity(0.2),
+                                          blurRadius: 8,
+                                          spreadRadius: 1,
+                                        ),
+                                      ],
+                                    ),
+                                    child: const Icon(
+                                      Icons.visibility,
+                                      color: AppColors.primary,
+                                      size: 28,
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),
                         ),
                       ),
-                    ),
-
-                    // Introduction text on top
-                    Positioned(
-                      left: 16,
-                      right: 16,
-                      bottom: 16,
-                      child: Text(
-                        card.introduction,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
+                    );
+                  },
                 ),
               ),
             ),
           ),
 
-          // Action buttons
+          // 액션 버튼
           Padding(
             padding: const EdgeInsets.all(AppPadding.medium),
             child: Row(
               children: [
-                // View button
+                // 보기 버튼
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: () {
-                      context.go('/card/${card.id}');
+                      context.go('/card/${widget.card.id}');
                     },
                     icon: const Icon(Icons.visibility_rounded, size: 18),
                     label: const Text(AppStrings.viewButton),
@@ -268,12 +366,12 @@ class CardItem extends ConsumerWidget {
 
                 const SizedBox(width: 12),
 
-                // Copy link button
+                // 링크 복사 버튼
                 Expanded(
                   child: ElevatedButton.icon(
                     onPressed: () {
                       final shareLink = ref.read(
-                        cardShareLinkProvider(card.id),
+                        cardShareLinkProvider(widget.card.id),
                       );
                       Clipboard.setData(ClipboardData(text: shareLink)).then((
                         _,

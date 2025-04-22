@@ -20,6 +20,9 @@ class _ShareScreenState extends ConsumerState<ShareScreen>
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
   bool _isSaved = false;
+  bool _isSaving = false;
+  bool _isGeneratingLink = false;
+  String? _generatedLink;
 
   @override
   void initState() {
@@ -40,36 +43,90 @@ class _ShareScreenState extends ConsumerState<ShareScreen>
     super.dispose();
   }
 
-  void _saveCard() {
-    final currentCard = ref.read(currentCardProvider);
-
-    // Add the card to the list
-    ref.read(cardListProvider.notifier).addCard(currentCard);
+  Future<void> _saveCard() async {
+    if (_isSaving) return;
 
     setState(() {
-      _isSaved = true;
+      _isSaving = true;
     });
 
-    // Show a success message
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('카드가 저장되었습니다!'),
-        backgroundColor: AppColors.primary,
-      ),
-    );
-  }
+    try {
+      final currentCard = ref.read(currentCardProvider);
 
-  void _copyLink(String cardId) {
-    final shareLink = ref.read(cardShareLinkProvider(cardId));
+      // Firebase 저장 로직 시뮬레이션 (실제 앱에서는 Firebase 관련 코드 구현)
+      await Future.delayed(const Duration(milliseconds: 1500));
 
-    Clipboard.setData(ClipboardData(text: shareLink)).then((_) {
+      // 카드 목록에 추가
+      ref.read(cardListProvider.notifier).addCard(currentCard);
+
+      setState(() {
+        _isSaving = false;
+        _isSaved = true;
+      });
+
+      // 저장 완료 메시지
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('링크가 복사되었습니다!'),
+          content: Text('카드가 저장되었습니다!'),
           backgroundColor: AppColors.primary,
         ),
       );
+    } catch (e) {
+      setState(() {
+        _isSaving = false;
+      });
+
+      // 에러 메시지
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('저장 중 오류가 발생했습니다: ${e.toString()}'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  Future<void> _generateAndCopyLink(String cardId) async {
+    if (_isGeneratingLink) return;
+
+    setState(() {
+      _isGeneratingLink = true;
     });
+
+    try {
+      // Firebase Dynamic Links 생성 로직 시뮬레이션 (실제 앱에서는 Firebase 관련 코드 구현)
+      await Future.delayed(const Duration(milliseconds: 1200));
+
+      final shareLink = "https://yourapp.page.link/${cardId.substring(0, 8)}";
+      _generatedLink = shareLink;
+
+      // 클립보드에 복사
+      await Clipboard.setData(ClipboardData(text: shareLink));
+
+      setState(() {
+        _isGeneratingLink = false;
+      });
+
+      // 성공 메시지
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('링크가 생성되어 클립보드에 복사되었습니다!'),
+          backgroundColor: AppColors.primary,
+        ),
+      );
+    } catch (e) {
+      setState(() {
+        _isGeneratingLink = false;
+      });
+
+      // 에러 메시지
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('링크 생성 중 오류가 발생했습니다: ${e.toString()}'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
   }
 
   @override
@@ -88,15 +145,18 @@ class _ShareScreenState extends ConsumerState<ShareScreen>
         children: [
           Expanded(
             child: Center(
-              child: AnimatedBuilder(
-                animation: _scaleAnimation,
-                builder: (context, child) {
-                  return Transform.scale(
-                    scale: _scaleAnimation.value,
-                    child: child,
-                  );
-                },
-                child: CardPreview(card: currentCard, showAnimations: true),
+              child: Hero(
+                tag: 'card_${currentCard.id}',
+                child: AnimatedBuilder(
+                  animation: _scaleAnimation,
+                  builder: (context, child) {
+                    return Transform.scale(
+                      scale: _scaleAnimation.value,
+                      child: child,
+                    );
+                  },
+                  child: CardPreview(card: currentCard, showAnimations: true),
+                ),
               ),
             ),
           ),
@@ -119,17 +179,18 @@ class _ShareScreenState extends ConsumerState<ShareScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Save button
+                // 저장 전 상태
                 if (!_isSaved)
                   CustomButton(
                     text: AppStrings.saveButton,
                     onPressed: _saveCard,
                     icon: Icons.save_rounded,
+                    isLoading: _isSaving,
                   )
                 else
                   Column(
                     children: [
-                      // Success message
+                      // 성공 메시지
                       Container(
                         padding: const EdgeInsets.all(AppPadding.medium),
                         decoration: BoxDecoration(
@@ -164,21 +225,81 @@ class _ShareScreenState extends ConsumerState<ShareScreen>
                         ),
                       ),
 
+                      if (_generatedLink != null) ...[
+                        const SizedBox(height: 16),
+
+                        // 생성된 링크 표시
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppPadding.medium,
+                            vertical: AppPadding.small,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(
+                              AppRadius.small,
+                            ),
+                            border: Border.all(
+                              color: Colors.grey.withOpacity(0.3),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  _generatedLink!,
+                                  style: const TextStyle(
+                                    fontFamily: 'monospace',
+                                    fontSize: 12,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.copy, size: 16),
+                                onPressed: () {
+                                  Clipboard.setData(
+                                    ClipboardData(text: _generatedLink!),
+                                  ).then((_) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('링크가 복사되었습니다!'),
+                                        backgroundColor: AppColors.primary,
+                                      ),
+                                    );
+                                  });
+                                },
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                splashRadius: 20,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+
                       const SizedBox(height: 16),
 
-                      // Copy link button
+                      // 링크 생성 버튼
                       CustomButton(
-                        text: AppStrings.copyLinkButton,
-                        onPressed: () => _copyLink(currentCard.id),
-                        icon: Icons.copy_rounded,
-                        type: ButtonType.outline,
+                        text:
+                            _generatedLink == null
+                                ? '공유 링크 생성하기'
+                                : AppStrings.copyLinkButton,
+                        onPressed: () => _generateAndCopyLink(currentCard.id),
+                        icon:
+                            _generatedLink == null
+                                ? Icons.link_rounded
+                                : Icons.copy_rounded,
+                        type: ButtonType.secondary,
+                        isLoading: _isGeneratingLink,
                       ),
                     ],
                   ),
 
                 const SizedBox(height: 16),
 
-                // Go to card list button
+                // 내 카드 목록으로 이동 버튼
                 CustomButton(
                   text: '내 카드 목록으로 이동',
                   onPressed: () => context.go('/my-cards'),
@@ -188,16 +309,25 @@ class _ShareScreenState extends ConsumerState<ShareScreen>
 
                 const SizedBox(height: 16),
 
-                // Create new card button
+                // 새 카드 만들기 버튼
                 TextButton(
                   onPressed: () {
-                    // Reset current card and go back to info screen
+                    // 현재 카드 초기화 후 정보 입력 화면으로 이동
                     ref.read(currentCardProvider.notifier).state =
                         ProfileCard.empty();
                     context.go('/info');
                   },
                   child: const Text('새 카드 만들기'),
                 ),
+
+                if (_isSaved) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    '링크를 통해 웹에서도 카드를 볼 수 있습니다',
+                    style: TextStyle(fontSize: 12, color: AppColors.textLight),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
               ],
             ),
           ),

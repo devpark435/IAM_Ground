@@ -21,6 +21,9 @@ class _WebViewerScreenState extends ConsumerState<WebViewerScreen>
   late Animation<double> _scaleAnimation;
   late Animation<double> _rotationAnimation;
   late Animation<double> _opacityAnimation;
+  double _dragRotationY = 0;
+  double _dragRotationX = 0;
+  bool _isDragging = false;
 
   @override
   void initState() {
@@ -60,6 +63,37 @@ class _WebViewerScreenState extends ConsumerState<WebViewerScreen>
     super.dispose();
   }
 
+  void _onPanUpdate(DragUpdateDetails details) {
+    setState(() {
+      _isDragging = true;
+      _dragRotationX += details.delta.dy / 150;
+      _dragRotationY -= details.delta.dx / 150;
+
+      // 회전 각도 제한
+      _dragRotationX = _dragRotationX.clamp(-0.3, 0.3);
+      _dragRotationY = _dragRotationY.clamp(-0.3, 0.3);
+    });
+  }
+
+  void _onPanEnd(DragEndDetails details) {
+    setState(() {
+      _isDragging = false;
+      // 부드럽게 원래 위치로 복귀하는 애니메이션 효과를 위해 바로 값을 0으로 설정하지 않음
+      _dragRotationX = _dragRotationX * 0.5;
+      _dragRotationY = _dragRotationY * 0.5;
+
+      // 약간의 지연 후 완전히 원위치
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted && !_isDragging) {
+          setState(() {
+            _dragRotationX = 0;
+            _dragRotationY = 0;
+          });
+        }
+      });
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final card = ref
@@ -89,11 +123,24 @@ class _WebViewerScreenState extends ConsumerState<WebViewerScreen>
                   context,
                 ).textTheme.bodyLarge?.copyWith(color: AppColors.textLight),
               ),
+              const SizedBox(height: 32),
+              ElevatedButton.icon(
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.arrow_back),
+                label: const Text('돌아가기'),
+              ),
             ],
           ),
         ),
       );
     }
+
+    // 카드의 2.5D 변형 행렬 계산
+    final Matrix4 cardTransform =
+        Matrix4.identity()
+          ..setEntry(3, 2, 0.001) // 원근감 추가
+          ..rotateX(_dragRotationX)
+          ..rotateY(_dragRotationY);
 
     return Scaffold(
       backgroundColor: Colors.black.withOpacity(0.9),
@@ -138,8 +185,8 @@ class _WebViewerScreenState extends ConsumerState<WebViewerScreen>
       ),
       body: Stack(
         children: [
-          // Background particles
-          ...List.generate(30, (index) {
+          // 배경 파티클
+          ...List.generate(40, (index) {
             final size = math.Random().nextDouble() * 8 + 2;
             final x =
                 math.Random().nextDouble() * MediaQuery.of(context).size.width;
@@ -168,27 +215,63 @@ class _WebViewerScreenState extends ConsumerState<WebViewerScreen>
             );
           }),
 
-          // Card with animations
-          Center(
-            child: AnimatedBuilder(
-              animation: _animationController,
-              builder: (context, child) {
-                return Transform.scale(
-                  scale: _scaleAnimation.value,
-                  child: Transform.rotate(
-                    angle: _rotationAnimation.value,
-                    child: CardPreview(
-                      card: card,
-                      showAnimations: true,
-                      isInteractive: true,
+          // 인터랙티브 배경 효과 (그라데이션)
+          AnimatedBuilder(
+            animation: _animationController,
+            builder: (context, child) {
+              return Container(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: Alignment(
+                      _dragRotationY * 0.5,
+                      _dragRotationX * 0.5,
                     ),
+                    radius: 1.2,
+                    colors: [
+                      AppColors.primary.withOpacity(0.2),
+                      Colors.black.withOpacity(0.92),
+                    ],
                   ),
-                );
-              },
+                ),
+              );
+            },
+          ),
+
+          // 인터랙티브 카드 (드래그로 회전)
+          GestureDetector(
+            onPanUpdate: _onPanUpdate,
+            onPanEnd: _onPanEnd,
+            child: Center(
+              child: AnimatedBuilder(
+                animation: _animationController,
+                builder: (context, child) {
+                  return Transform(
+                    transform: cardTransform,
+                    alignment: Alignment.center,
+                    child: Transform.scale(
+                      scale: _scaleAnimation.value,
+                      child: Transform.rotate(
+                        angle: _rotationAnimation.value,
+                        child: Hero(
+                          tag: 'card_${card.id}',
+                          child: Material(
+                            color: Colors.transparent,
+                            child: CardPreview(
+                              card: card,
+                              showAnimations: true,
+                              isInteractive: true,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
             ),
           ),
 
-          // Bottom info panel with fade-in animation
+          // 하단 정보 패널 (페이드인)
           AnimatedBuilder(
             animation: _opacityAnimation,
             builder: (context, child) {
@@ -240,6 +323,29 @@ class _WebViewerScreenState extends ConsumerState<WebViewerScreen>
                             _buildInfoChip(card.mbti),
                           ],
                         ),
+                        const SizedBox(height: 16),
+                        // 카드 정보 UI 표시
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _buildInfoBadge(Icons.person, card.name),
+                            const SizedBox(width: 16),
+                            _buildInfoBadge(
+                              Icons.calendar_today,
+                              _formatDate(card.createdAt),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        // 안내 문구
+                        Text(
+                          '카드를 드래그하여 회전시켜보세요!',
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.6),
+                            fontSize: 12,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
                       ],
                     ),
                   ),
@@ -250,6 +356,10 @@ class _WebViewerScreenState extends ConsumerState<WebViewerScreen>
         ],
       ),
     );
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.year}.${date.month.toString().padLeft(2, '0')}.${date.day.toString().padLeft(2, '0')}';
   }
 
   Widget _buildInfoChip(String label) {
@@ -268,6 +378,20 @@ class _WebViewerScreenState extends ConsumerState<WebViewerScreen>
           fontSize: 12,
         ),
       ),
+    );
+  }
+
+  Widget _buildInfoBadge(IconData icon, String text) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16, color: Colors.white.withOpacity(0.7)),
+        const SizedBox(width: 6),
+        Text(
+          text,
+          style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12),
+        ),
+      ],
     );
   }
 }
